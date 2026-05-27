@@ -1,5 +1,5 @@
 from builtins import super
-import numpy as np
+import cupy as cp
 import numbers
 from .deformable_registration import DeformableRegistration
 
@@ -33,21 +33,21 @@ class ConstrainedDeformableRegistration(DeformableRegistration):
             raise ValueError(
                 "Expected a positive value for regularization parameter e_alpha. Instead got: {}".format(e_alpha))
         
-        if type(source_id) is not np.ndarray or source_id.ndim != 1:
+        if type(source_id) is not cp.ndarray or source_id.ndim != 1:
             raise ValueError(
                 "The source ids (source_id) must be a 1D numpy array of ints.")
         
-        if type(target_id) is not np.ndarray or target_id.ndim != 1:
+        if type(target_id) is not cp.ndarray or target_id.ndim != 1:
             raise ValueError(
                 "The target ids (target_id) must be a 1D numpy array of ints.")
 
         self.e_alpha = 1e-8 if e_alpha is None else e_alpha
         self.source_id = source_id
         self.target_id = target_id
-        self.P_tilde = np.zeros((self.M, self.N))
+        self.P_tilde = cp.zeros((self.M, self.N))
         self.P_tilde[self.source_id, self.target_id] = 1
-        self.P1_tilde = np.sum(self.P_tilde, axis=1)
-        self.PX_tilde = np.dot(self.P_tilde, self.X)
+        self.P1_tilde = cp.sum(self.P_tilde, axis=1)
+        self.PX_tilde = cp.dot(self.P_tilde, self.X)
 
     def update_transform(self):
         """
@@ -56,21 +56,21 @@ class ConstrainedDeformableRegistration(DeformableRegistration):
 
         """
         if self.low_rank is False:
-            A = np.dot(np.diag(self.P1), self.G) + \
-                self.sigma2*(1/self.e_alpha)*np.dot(np.diag(self.P1_tilde), self.G) + \
-                self.alpha * self.sigma2 * np.eye(self.M)
-            B = self.PX - np.dot(np.diag(self.P1), self.Y) + self.sigma2*(1/self.e_alpha)*(self.PX_tilde - np.dot(np.diag(self.P1_tilde), self.Y)) 
-            self.W = np.linalg.solve(A, B)
+            A = cp.dot(cp.diag(self.P1), self.G) + \
+                self.sigma2*(1/self.e_alpha)*cp.dot(cp.diag(self.P1_tilde), self.G) + \
+                self.alpha * self.sigma2 * cp.eye(self.M)
+            B = self.PX - cp.dot(cp.diag(self.P1), self.Y) + self.sigma2*(1/self.e_alpha)*(self.PX_tilde - cp.dot(cp.diag(self.P1_tilde), self.Y)) 
+            self.W = cp.linalg.solve(A, B)
 
         elif self.low_rank is True:
             # Matlab code equivalent can be found here:
             # https://github.com/markeroon/matlab-computer-vision-routines/tree/master/third_party/CoherentPointDrift
-            dP = np.diag(self.P1) + self.sigma2*(1/self.e_alpha)*np.diag(self.P1_tilde)
-            dPQ = np.matmul(dP, self.Q)
-            F = self.PX - np.dot(np.diag(self.P1), self.Y) + self.sigma2*(1/self.e_alpha)*(self.PX_tilde - np.dot(np.diag(self.P1_tilde), self.Y)) 
+            dP = cp.diag(self.P1) + self.sigma2*(1/self.e_alpha)*cp.diag(self.P1_tilde)
+            dPQ = cp.matmul(dP, self.Q)
+            F = self.PX - cp.dot(cp.diag(self.P1), self.Y) + self.sigma2*(1/self.e_alpha)*(self.PX_tilde - cp.dot(cp.diag(self.P1_tilde), self.Y)) 
 
-            self.W = 1 / (self.alpha * self.sigma2) * (F - np.matmul(dPQ, (
-                np.linalg.solve((self.alpha * self.sigma2 * self.inv_S + np.matmul(self.Q.T, dPQ)),
-                                (np.matmul(self.Q.T, F))))))
-            QtW = np.matmul(self.Q.T, self.W)
-            self.E = self.E + self.alpha / 2 * np.trace(np.matmul(QtW.T, np.matmul(self.S, QtW)))
+            self.W = 1 / (self.alpha * self.sigma2) * (F - cp.matmul(dPQ, (
+                cp.linalg.solve((self.alpha * self.sigma2 * self.inv_S + cp.matmul(self.Q.T, dPQ)),
+                                (cp.matmul(self.Q.T, F))))))
+            QtW = cp.matmul(self.Q.T, self.W)
+            self.E = self.E + self.alpha / 2 * cp.trace(cp.matmul(QtW.T, cp.matmul(self.S, QtW)))
