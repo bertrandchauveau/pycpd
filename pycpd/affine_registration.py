@@ -1,5 +1,5 @@
 from builtins import super
-import numpy as np
+import cupy as cp
 from .emregistration import EMRegistration
 from .utility import is_positive_semi_definite
 
@@ -36,8 +36,8 @@ class AffineRegistration(EMRegistration):
             raise ValueError(
                 'The translation vector can only be initialized to 1x{} positive semi definite matrices. Instead got: {}.'.format(self.D, t))
         
-        self.B = np.eye(self.D) if B is None else B
-        self.t = np.atleast_2d(np.zeros((1, self.D))) if t is None else t
+        self.B = cp.eye(self.D) if B is None else B
+        self.t = cp.atleast_2d(cp.zeros((1, self.D))) if t is None else t
 
         self.YPY = None
         self.X_hat = None
@@ -50,24 +50,24 @@ class AffineRegistration(EMRegistration):
         """
 
         # source and target point cloud means
-        muX = np.divide(np.sum(self.PX, axis=0), self.Np)
-        muY = np.divide(
-            np.sum(np.dot(np.transpose(self.P), self.Y), axis=0), self.Np)
+        muX = cp.divide(cp.sum(self.PX, axis=0), self.Np)
+        muY = cp.divide(
+            cp.sum(cp.dot(cp.transpose(self.P), self.Y), axis=0), self.Np)
 
-        self.X_hat = self.X - np.tile(muX, (self.N, 1))
-        Y_hat = self.Y - np.tile(muY, (self.M, 1))
+        self.X_hat = self.X - cp.tile(muX, (self.N, 1))
+        Y_hat = self.Y - cp.tile(muY, (self.M, 1))
 
-        self.A = np.dot(np.transpose(self.X_hat), np.transpose(self.P))
-        self.A = np.dot(self.A, Y_hat)
+        self.A = cp.dot(cp.transpose(self.X_hat), cp.transpose(self.P))
+        self.A = cp.dot(self.A, Y_hat)
 
-        self.YPY = np.dot(np.transpose(Y_hat), np.diag(self.P1))
-        self.YPY = np.dot(self.YPY, Y_hat)
+        self.YPY = cp.dot(cp.transpose(Y_hat), cp.diag(self.P1))
+        self.YPY = cp.dot(self.YPY, Y_hat)
 
         # Calculate the new estimate of affine parameters using update rules for (B, t)
         # as defined in Fig. 3 of https://arxiv.org/pdf/0905.2635.pdf.
-        self.B = np.linalg.solve(np.transpose(self.YPY), np.transpose(self.A))
-        self.t = np.transpose(
-            muX) - np.dot(np.transpose(self.B), np.transpose(muY))
+        self.B = cp.linalg.solve(cp.transpose(self.YPY), cp.transpose(self.A))
+        self.t = cp.transpose(
+            muX) - cp.dot(cp.transpose(self.B), cp.transpose(muY))
 
     def transform_point_cloud(self, Y=None):
         """
@@ -87,10 +87,10 @@ class AffineRegistration(EMRegistration):
 
         """
         if Y is None:
-            self.TY = np.dot(self.Y, self.B) + np.tile(self.t, (self.M, 1))
+            self.TY = cp.dot(self.Y, self.B) + cp.tile(self.t, (self.M, 1))
             return
         else:
-            return np.dot(Y, self.B) + np.tile(self.t, (Y.shape[0], 1))
+            return cp.dot(Y, self.B) + cp.tile(self.t, (Y.shape[0], 1))
 
     def update_variance(self):
         """
@@ -100,13 +100,13 @@ class AffineRegistration(EMRegistration):
         """
         qprev = self.q
 
-        trAB = np.trace(np.dot(self.A, self.B))
-        xPx = np.dot(np.transpose(self.Pt1), np.sum(
-            np.multiply(self.X_hat, self.X_hat), axis=1))
-        trBYPYP = np.trace(np.dot(np.dot(self.B, self.YPY), self.B))
+        trAB = cp.trace(cp.dot(self.A, self.B))
+        xPx = cp.dot(cp.transpose(self.Pt1), cp.sum(
+            cp.multiply(self.X_hat, self.X_hat), axis=1))
+        trBYPYP = cp.trace(cp.dot(cp.dot(self.B, self.YPY), self.B))
         self.q = (xPx - 2 * trAB + trBYPYP) / (2 * self.sigma2) + \
-            self.D * self.Np/2 * np.log(self.sigma2)
-        self.diff = np.abs(self.q - qprev)
+            self.D * self.Np/2 * cp.log(self.sigma2)
+        self.diff = cp.abs(self.q - qprev)
 
         self.sigma2 = (xPx - trAB) / (self.Np * self.D)
 
