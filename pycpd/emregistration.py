@@ -1,5 +1,5 @@
 from __future__ import division
-import numpy as np
+import cupy as cp
 import numbers
 from warnings import warn
 
@@ -25,7 +25,7 @@ def initialize_sigma2(X, Y):
     (M, _) = Y.shape
     diff = X[None, :, :] - Y[:, None, :]
     err = diff ** 2
-    return np.sum(err) / (D * M * N)
+    return cp.sum(err) / (D * M * N)
 
 def lowrankQS(G, beta, num_eig, eig_fgt=False):
     """
@@ -55,8 +55,8 @@ def lowrankQS(G, beta, num_eig, eig_fgt=False):
     # first eigenvectors/values directly
 
     if eig_fgt is False:
-        S, Q = np.linalg.eigh(G)
-        eig_indices = list(np.argsort(np.abs(S))[::-1][:num_eig])
+        S, Q = cp.linalg.eigh(G)
+        eig_indices = list(cp.argsort(cp.abs(S))[::-1][:num_eig])
         Q = Q[:, eig_indices]  # eigenvectors
         S = S[eig_indices]  # eigenvalues.
 
@@ -133,11 +133,11 @@ class EMRegistration(object):
     """
 
     def __init__(self, X, Y, sigma2=None, max_iterations=None, tolerance=None, w=None, *args, **kwargs):
-        if type(X) is not np.ndarray or X.ndim != 2:
+        if type(X) is not cp.ndarray or X.ndim != 2:
             raise ValueError(
                 "The target point cloud (X) must be at a 2D numpy array.")
 
-        if type(Y) is not np.ndarray or Y.ndim != 2:
+        if type(Y) is not cp.ndarray or Y.ndim != 2:
             raise ValueError(
                 "The source point cloud (Y) must be a 2D numpy array.")
 
@@ -174,12 +174,12 @@ class EMRegistration(object):
         self.w = 0.0 if w is None else w
         self.max_iterations = 100 if max_iterations is None else max_iterations
         self.iteration = 0
-        self.diff = np.inf
-        self.q = np.inf
-        self.P = np.zeros((self.M, self.N))
-        self.Pt1 = np.zeros((self.N, ))
-        self.P1 = np.zeros((self.M, ))
-        self.PX = np.zeros((self.M, self.D))
+        self.diff = cp.inf
+        self.q = cp.inf
+        self.P = cp.zeros((self.M, self.N))
+        self.Pt1 = cp.zeros((self.N, ))
+        self.P1 = cp.zeros((self.M, ))
+        self.PX = cp.zeros((self.M, self.D))
         self.Np = 0
 
     def register(self, callback=lambda **kwargs: None):
@@ -250,18 +250,18 @@ class EMRegistration(object):
         """
         Compute the expectation step of the EM algorithm.
         """
-        P = np.sum((self.X[None, :, :] - self.TY[:, None, :])**2, axis=2) # (M, N)
-        P = np.exp(-P/(2*self.sigma2))
-        c = (2*np.pi*self.sigma2)**(self.D/2)*self.w/(1. - self.w)*self.M/self.N
+        P = cp.sum((self.X[None, :, :] - self.TY[:, None, :])**2, axis=2) # (M, N)
+        P = cp.exp(-P/(2*self.sigma2))
+        c = (2*cp.pi*self.sigma2)**(self.D/2)*self.w/(1. - self.w)*self.M/self.N
 
-        den = np.sum(P, axis = 0, keepdims = True) # (1, N)
-        den = np.clip(den, np.finfo(self.X.dtype).eps, None) + c
+        den = cp.sum(P, axis = 0, keepdims = True) # (1, N)
+        den = cp.clip(den, cp.finfo(self.X.dtype).eps, None) + c
 
-        self.P = np.divide(P, den)
-        self.Pt1 = np.sum(self.P, axis=0)
-        self.P1 = np.sum(self.P, axis=1)
-        self.Np = np.sum(self.P1)
-        self.PX = np.matmul(self.P, self.X)
+        self.P = cp.divide(P, den)
+        self.Pt1 = cp.sum(self.P, axis=0)
+        self.P1 = cp.sum(self.P, axis=1)
+        self.Np = cp.sum(self.P1)
+        self.PX = cp.matmul(self.P, self.X)
 
     def maximization(self):
         """
