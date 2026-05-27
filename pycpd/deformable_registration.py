@@ -1,5 +1,5 @@
 from builtins import super
-import numpy as np
+import cupy as cp
 import numbers
 from .emregistration import EMRegistration
 from .utility import gaussian_kernel, low_rank_eigen
@@ -35,14 +35,14 @@ class DeformableRegistration(EMRegistration):
 
         self.alpha = 2 if alpha is None else alpha
         self.beta = 2 if beta is None else beta
-        self.W = np.zeros((self.M, self.D))
+        self.W = cp.zeros((self.M, self.D))
         self.G = gaussian_kernel(self.Y, self.beta)
         self.low_rank = low_rank
         self.num_eig = num_eig
         if self.low_rank is True:
             self.Q, self.S = low_rank_eigen(self.G, self.num_eig)
-            self.inv_S = np.diag(1./self.S)
-            self.S = np.diag(self.S)
+            self.inv_S = cp.diag(1./self.S)
+            self.S = cp.diag(self.S)
             self.E = 0.
 
     def update_transform(self):
@@ -52,23 +52,23 @@ class DeformableRegistration(EMRegistration):
 
         """
         if self.low_rank is False:
-            A = np.dot(np.diag(self.P1), self.G) + \
-                self.alpha * self.sigma2 * np.eye(self.M)
-            B = self.PX - np.dot(np.diag(self.P1), self.Y)
-            self.W = np.linalg.solve(A, B)
+            A = cp.dot(cp.diag(self.P1), self.G) + \
+                self.alpha * self.sigma2 * cp.eye(self.M)
+            B = self.PX - cp.dot(cp.diag(self.P1), self.Y)
+            self.W = cp.linalg.solve(A, B)
 
         elif self.low_rank is True:
             # Matlab code equivalent can be found here:
             # https://github.com/markeroon/matlab-computer-vision-routines/tree/master/third_party/CoherentPointDrift
-            dP = np.diag(self.P1)
-            dPQ = np.matmul(dP, self.Q)
-            F = self.PX - np.matmul(dP, self.Y)
+            dP = cp.diag(self.P1)
+            dPQ = cp.matmul(dP, self.Q)
+            F = self.PX - cp.matmul(dP, self.Y)
 
-            self.W = 1 / (self.alpha * self.sigma2) * (F - np.matmul(dPQ, (
-                np.linalg.solve((self.alpha * self.sigma2 * self.inv_S + np.matmul(self.Q.T, dPQ)),
-                                (np.matmul(self.Q.T, F))))))
-            QtW = np.matmul(self.Q.T, self.W)
-            self.E = self.E + self.alpha / 2 * np.trace(np.matmul(QtW.T, np.matmul(self.S, QtW)))
+            self.W = 1 / (self.alpha * self.sigma2) * (F - cp.matmul(dPQ, (
+                cp.linalg.solve((self.alpha * self.sigma2 * self.inv_S + cp.matmul(self.Q.T, dPQ)),
+                                (cp.matmul(self.Q.T, F))))))
+            QtW = cp.matmul(self.Q.T, self.W)
+            self.E = self.E + self.alpha / 2 * cp.trace(cp.matmul(QtW.T, cp.matmul(self.S, QtW)))
 
     def transform_point_cloud(self, Y=None):
         """
@@ -90,13 +90,13 @@ class DeformableRegistration(EMRegistration):
         """
         if Y is not None:
             G = gaussian_kernel(X=Y, beta=self.beta, Y=self.Y)
-            return Y + np.dot(G, self.W)
+            return Y + cp.dot(G, self.W)
         else:
             if self.low_rank is False:
-                self.TY = self.Y + np.dot(self.G, self.W)
+                self.TY = self.Y + cp.dot(self.G, self.W)
 
             elif self.low_rank is True:
-                self.TY = self.Y + np.matmul(self.Q, np.matmul(self.S, np.matmul(self.Q.T, self.W)))
+                self.TY = self.Y + cp.matmul(self.Q, cp.matmul(self.S, cp.matmul(self.Q.T, self.W)))
                 return
 
 
@@ -111,13 +111,13 @@ class DeformableRegistration(EMRegistration):
         # The original CPD paper does not explicitly calculate the objective functional.
         # This functional will include terms from both the negative log-likelihood and
         # the Gaussian kernel used for regularization.
-        self.q = np.inf
+        self.q = cp.inf
 
-        xPx = np.dot(np.transpose(self.Pt1), np.sum(
-            np.multiply(self.X, self.X), axis=1))
-        yPy = np.dot(np.transpose(self.P1),  np.sum(
-            np.multiply(self.TY, self.TY), axis=1))
-        trPXY = np.sum(np.multiply(self.TY, self.PX))
+        xPx = cp.dot(cp.transpose(self.Pt1), cp.sum(
+            cp.multiply(self.X, self.X), axis=1))
+        yPy = cp.dot(cp.transpose(self.P1),  cp.sum(
+            cp.multiply(self.TY, self.TY), axis=1))
+        trPXY = cp.sum(cp.multiply(self.TY, self.PX))
 
         self.sigma2 = (xPx - 2 * trPXY + yPy) / (self.Np * self.D)
 
@@ -126,7 +126,7 @@ class DeformableRegistration(EMRegistration):
 
         # Here we use the difference between the current and previous
         # estimate of the variance as a proxy to test for convergence.
-        self.diff = np.abs(self.sigma2 - qprev)
+        self.diff = cp.abs(self.sigma2 - qprev)
 
     def get_registration_parameters(self):
         """
