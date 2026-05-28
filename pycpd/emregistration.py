@@ -250,8 +250,27 @@ class EMRegistration(object):
         """
         Compute the expectation step of the EM algorithm.
         """
-        P = cp.sum((self.X[None, :, :] - self.TY[:, None, :])**2, axis=2) # (M, N)
-        P = cp.exp(-P/(2*self.sigma2))
+        #P = cp.sum((self.X[None, :, :] - self.TY[:, None, :])**2, axis=2) # (M, N)
+        #P = cp.exp(-P/(2*self.sigma2))
+
+        ###
+        # self.X and self.TY are now cp.arrays
+        # 1. Compute squared norms (M,) and (N,)
+        X_sq = cp.sum(self.X**2, axis=1) 
+        Y_sq = cp.sum(self.TY**2, axis=1)
+        
+        # 2. The "Magic" step: Highly optimized GPU Matrix Multiplication
+        # This produces the (M, N) distance matrix WITHOUT a 3D intermediate
+        XY = cp.matmul(self.TY, self.X.T)
+        
+        # 3. Broadcasted subtraction/addition (Memory efficient 2D broadcast)
+        # Result is (M, N)
+        dist_sq = X_sq[None, :] + Y_sq[:, None] - 2 * XY
+        dist_sq = cp.maximum(dist_sq, 0) # Clean up precision errors
+        
+        P = cp.exp(-dist_sq / (2 * self.sigma2))
+        ###
+       
         c = (2*cp.pi*self.sigma2)**(self.D/2)*self.w/(1. - self.w)*self.M/self.N
 
         den = cp.sum(P, axis = 0, keepdims = True) # (1, N)
